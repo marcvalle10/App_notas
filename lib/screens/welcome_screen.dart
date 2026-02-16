@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
+
 import '../utils/constants.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -26,7 +27,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
     final name = prefs.getString(kUserNameKey);
 
-    // Token estilo C: UUID largo
+    // Token estilo UUID largo
     var token = prefs.getString(kUserTokenKey);
     if (token == null || token.isEmpty) {
       token = const Uuid().v4();
@@ -101,8 +102,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     final displayName = (_name == null || _name!.isEmpty) ? null : _name;
 
     return GestureDetector(
-      onTap: _goNotes, // “presiona en cualquier lado”
+      behavior: HitTestBehavior.opaque,
+      onTap: _goNotes, // “toca en cualquier lado”
       child: Scaffold(
+        backgroundColor: AppColors.azulMarino, // <-- azul marino
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -110,66 +113,99 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Spacer(),
-                const Icon(Icons.note_alt, size: 90),
-                const SizedBox(height: 12),
-                const Text(
-                  'App de Notas',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+
+                // LOGO UNISON
+                Image.asset(
+                  'assets/images/ESCUDO-COLOR.png',
+                  height: 140,
                 ),
+
+                const SizedBox(height: 18),
+
+                // NOMBRE APP
+                const Text(
+                  'UniNotas UNISON',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+
                 const SizedBox(height: 10),
+
+                // AUTORES (equipo)
+                const Text(
+                  'Casas Gastelum Ana Cecilia\n'
+                  'Murillo Monge Joshua David\n'
+                  'Vallejo Leyva Marcos',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Colors.white70,
+                    height: 1.3,
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                // SALUDO
                 Text(
                   displayName == null
                       ? 'Hola 👋 (toca "Cambiar nombre")'
                       : 'Hola, $displayName 👋',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 16),
+                  style: const TextStyle(fontSize: 16, color: Colors.white),
                 ),
 
-                // TOKEN debajo del nombre
+                // TOKEN
                 const SizedBox(height: 8),
                 if (_token != null)
                   Text(
                     '#$_token',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontSize: 13,
-                    ),
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
                   ),
 
                 const SizedBox(height: 14),
 
-                // Botones (evitamos que el tap general navegue)
+                // BOTONES
                 Row(
                   children: [
                     Expanded(
                       child: FilledButton(
-                        onPressed: () async {
-                          // Evita que el tap del GestureDetector navegue
-                          await _changeName();
-                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.doradoUnison,
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: _changeName,
                         child: const Text('Cambiar nombre'),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () async {
-                          await _copyToken();
-                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                        ),
+                        onPressed: _copyToken,
                         child: const Text('Copiar token'),
                       ),
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 10),
-                Text(
+                const SizedBox(height: 12),
+
+                // SOLO esto (sin botón iniciar)
+                const Text(
                   'Toca en cualquier parte para continuar',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade700),
+                  style: TextStyle(color: Colors.white70),
                 ),
+
                 const Spacer(),
               ],
             ),

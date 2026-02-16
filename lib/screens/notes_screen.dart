@@ -66,6 +66,141 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     });
   }
 
+  Future<void> _openSharePicker() async {
+  // Solo permitir desde "Mis notas"
+  _tabs.animateTo(0);
+
+  final tokenController = TextEditingController();
+  final selected = <String>{}; // noteIds seleccionadas
+
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (ctx, setLocal) {
+          return AlertDialog(
+            title: const Text('Compartir notas por token'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: tokenController,
+                    decoration: const InputDecoration(
+                      labelText: 'Token del usuario',
+                      hintText: 'Pega el token (UUID)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Selecciona tus notas:',
+                      style: TextStyle(color: Colors.grey.shade800),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Flexible(
+                    child: _notes.isEmpty
+                        ? const Text('No tienes notas para compartir.')
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _notes.length,
+                            itemBuilder: (_, i) {
+                              final n = _notes[i];
+                              final checked = selected.contains(n.id);
+                              return CheckboxListTile(
+                                value: checked,
+                                dense: true,
+                                title: Text(
+                                  n.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  n.content.isEmpty ? '(Sin contenido)' : n.content,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onChanged: (v) {
+                                  setLocal(() {
+                                    if (v == true) {
+                                      selected.add(n.id);
+                                    } else {
+                                      selected.remove(n.id);
+                                    }
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Compartir'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  if (ok != true) return;
+
+  final token = tokenController.text.trim();
+  if (token.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Pega un token válido.')),
+    );
+    return;
+  }
+  if (selected.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Selecciona al menos una nota.')),
+    );
+    return;
+  }
+
+  // Ejecuta el share (con try/catch para no tronar)
+  try {
+    setState(() => _isSyncing = true);
+
+    await _cloud.signInAnonymousIfNeeded();
+    final user = await _getNameAndToken();
+    await _cloud.ensureProfile(
+      name: user['name']!.isEmpty ? 'Usuario' : user['name']!,
+      token: user['token']!.isEmpty ? 'NO_TOKEN' : user['token']!,
+    );
+
+    for (final noteId in selected) {
+      await _cloud.shareNoteByToken(noteId: noteId, token: token);
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Compartidas ${selected.length} nota(s) ✅')),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No se pudo compartir: $e')),
+    );
+  } finally {
+    if (mounted) setState(() => _isSyncing = false);
+  }
+}
+
   void _listenConnectivity() async {
     // estado inicial
     final initial = await Connectivity().checkConnectivity();
@@ -290,6 +425,12 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
           ),
 
           IconButton(
+            tooltip: 'Compartir por token',
+            onPressed: () => _openSharePicker(),
+            icon: const Icon(Icons.group_add),
+          ),
+
+          IconButton(
             tooltip: 'Sincronizar',
             onPressed: _isSyncing ? null : () => _syncNow(showSnackbars: true),
             icon: _isSyncing
@@ -300,6 +441,8 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                   )
                 : const Icon(Icons.sync),
           ),
+
+          
         ],
         bottom: TabBar(
           controller: _tabs,
