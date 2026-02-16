@@ -23,5 +23,5 @@ const kNoteColorValues = <int>[
 
 const int kDefaultColorValue = 0xFFFFF3B0;
 
-const String kUserNameKey = 'USER_NAME_KEY'; // como tu USER_NAME_KEY
+const String kUserNameKey = 'USER_NAME_KEY';
 const String kUserTokenKey = 'USER_TOKEN_KEY';

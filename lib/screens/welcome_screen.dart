@@ -124,7 +124,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
                 // NOMBRE APP
                 const Text(
-                  'UniNotas UNISON',
+                  'UniNotas',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 28,
@@ -178,6 +178,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.doradoUnison,
                           foregroundColor: Colors.black,
+                          side: const BorderSide(color: Colors.black),
                         ),
                         onPressed: _changeName,
                         child: const Text('Cambiar nombre'),
@@ -187,8 +188,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     Expanded(
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white70),
+                          backgroundColor: AppColors.doradoUnison,
+                          foregroundColor: Colors.black,
+                          side: const BorderSide(color: Colors.black),
                         ),
                         onPressed: _copyToken,
                         child: const Text('Copiar token'),
