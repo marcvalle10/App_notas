@@ -71,64 +71,85 @@ class CloudSyncService {
 
   // 5) Bajar notas compartidas conmigo
   Future<List<Note>> pullSharedNotes() async {
-    final uid = _sb.auth.currentUser?.id;
-    if (uid == null) throw Exception('No auth user');
+  final uid = _sb.auth.currentUser?.id;
+  if (uid == null) throw Exception('No auth user');
 
-    // Primero trae ids de notas compartidas
-    final shares = await _sb
-        .from('note_shares')
-        .select('note_id')
-        .eq('shared_with', uid);
+  final rows = await _sb
+      .from('note_shares')
+      .select('notes(id,title,content,color_value,updated_at)')
+      .eq('shared_with', uid);
 
-    final ids = (shares as List).map((e) => (e as Map)['note_id'] as String).toList();
-    if (ids.isEmpty) return [];
+  final notes = <Note>[];
 
-    final rows = await _sb.from('notes').select().inFilter('id', ids);
+  for (final r in (rows as List)) {
+    final m = (r as Map<String, dynamic>)['notes'];
+    if (m == null) continue;
 
-    return (rows as List).map((r) {
-      final m = Map<String, dynamic>.from(r);
-      return Note(
-        id: m['id'] as String,
-        title: m['title'] as String,
-        content: (m['content'] as String?) ?? '',
-        colorValue: (m['color_value'] as int?) ?? 0,
-        createdAt: DateTime.parse(m['updated_at'] as String),
-        updatedAt: DateTime.parse(m['updated_at'] as String),
-      );
-    }).toList();
+    final n = Map<String, dynamic>.from(m as Map);
+
+    notes.add(
+      Note(
+        id: n['id'] as String,
+        title: n['title'] as String,
+        content: (n['content'] as String?) ?? '',
+        colorValue: (n['color_value'] as int?) ?? 0,
+        createdAt: DateTime.parse(n['updated_at'] as String),
+        updatedAt: DateTime.parse(n['updated_at'] as String),
+      ),
+    );
   }
 
+  notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  return notes;
+}
+
   // 6) Compartir por token
-  Future<void> shareNoteByToken({required String noteId, required String token}) async {
-    final uid = _sb.auth.currentUser?.id;
-    if (uid == null) throw Exception('No auth user');
+Future<void> shareNoteByToken({required String noteId, required String token}) async {
+  final uid = _sb.auth.currentUser?.id;
+  if (uid == null) throw Exception('No auth user');
 
-    // 1) Buscar usuario destino por token (RPC)
-    final res = await _sb.rpc('find_profile_by_token', params: {'p_token': token});
-    final list = (res as List);
-    if (list.isEmpty) throw Exception('Token no encontrado');
-    final targetId = (list.first as Map)['id'] as String;
+  // 1) Buscar usuario destino por token (RPC)
+  final res = await _sb.rpc('find_profile_by_token', params: {'p_token': token});
+  final list = (res as List);
+  if (list.isEmpty) throw Exception('Token no encontrado');
+  final targetId = (list.first as Map)['id'] as String;
 
-    // 2) Asegurar que la nota exista en nube y sea del owner actual
-    final noteRow = await _sb
-        .from('notes')
-        .select('id, owner_id')
-        .eq('id', noteId)
-        .maybeSingle();
+  if (targetId == uid) {
+    throw Exception('No puedes compartirte una nota a ti mismo.');
+  }
 
-    if (noteRow == null) {
-      throw Exception('Esa nota no está sincronizada aún. Haz Sync primero.');
-    }
-    if (noteRow['owner_id'] != uid) {
-      throw Exception('No eres dueño de esa nota (no se puede compartir).');
-    }
+  // 2) Asegurar que la nota exista en nube y sea del owner actual
+  final noteRow = await _sb
+      .from('notes')
+      .select('id, owner_id')
+      .eq('id', noteId)
+      .maybeSingle();
 
-    // 3) Insert share
-    await _sb.from('note_shares').upsert({
+  if (noteRow == null) {
+    throw Exception('Esa nota no está sincronizada aún. Haz Sync primero.');
+  }
+  if (noteRow['owner_id'] != uid) {
+    throw Exception('No eres dueño de esa nota (no se puede compartir).');
+  }
+
+  // 3) Insert share (si ya existe, mostramos mensaje amigable)
+  try {
+    await _sb.from('note_shares').insert({
       'note_id': noteId,
       'shared_with': targetId,
     });
+  } on PostgrestException catch (e) {
+    // 23505 = unique_violation (PK compuesta note_id + shared_with)
+    if (e.code == '23505') {
+      throw Exception('Esa nota ya estaba compartida con ese token.');
+    }
+    // 42501 = RLS
+    if (e.code == '42501') {
+      throw Exception('Bloqueado por seguridad (RLS). Revisa policies de note_shares.');
+    }
+    rethrow;
   }
+}
     Future<void> deleteRemoteNote(String noteId) async {
       await _sb.from('notes').delete().eq('id', noteId);
     }
