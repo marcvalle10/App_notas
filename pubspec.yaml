@@ -11,6 +11,8 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  supabase_flutter: ^2.5.6
+  connectivity_plus: ^6.0.3
 
   # Persistencia + utilidades
   hive: ^2.2.3
