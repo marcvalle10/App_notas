@@ -71,7 +71,7 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
   _tabs.animateTo(0);
 
   final tokenController = TextEditingController();
-  final selected = <String>{}; // noteIds seleccionadas
+  final selected = <String>{};
 
   final ok = await showDialog<bool>(
     context: context,
@@ -172,10 +172,13 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     return;
   }
 
-  // Ejecuta el share (con try/catch para no tronar)
   try {
     setState(() => _isSyncing = true);
 
+    // 🔥 1) FORZAR SYNC ANTES DE COMPARTIR
+    await _syncNow(showSnackbars: false);
+
+    // 🔥 2) Asegurar sesión y profile
     await _cloud.signInAnonymousIfNeeded();
     final user = await _getNameAndToken();
     await _cloud.ensureProfile(
@@ -183,8 +186,12 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
       token: user['token']!.isEmpty ? 'NO_TOKEN' : user['token']!,
     );
 
+    // 🔥 3) Compartir notas seleccionadas
     for (final noteId in selected) {
-      await _cloud.shareNoteByToken(noteId: noteId, token: token);
+      await _cloud.shareNoteByToken(
+        noteId: noteId,
+        token: token,
+      );
     }
 
     if (!mounted) return;

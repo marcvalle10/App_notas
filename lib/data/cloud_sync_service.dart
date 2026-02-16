@@ -100,13 +100,30 @@ class CloudSyncService {
 
   // 6) Compartir por token
   Future<void> shareNoteByToken({required String noteId, required String token}) async {
-    // RPC: find_profile_by_token
+    final uid = _sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('No auth user');
+
+    // 1) Buscar usuario destino por token (RPC)
     final res = await _sb.rpc('find_profile_by_token', params: {'p_token': token});
     final list = (res as List);
     if (list.isEmpty) throw Exception('Token no encontrado');
-
     final targetId = (list.first as Map)['id'] as String;
 
+    // 2) Asegurar que la nota exista en nube y sea del owner actual
+    final noteRow = await _sb
+        .from('notes')
+        .select('id, owner_id')
+        .eq('id', noteId)
+        .maybeSingle();
+
+    if (noteRow == null) {
+      throw Exception('Esa nota no está sincronizada aún. Haz Sync primero.');
+    }
+    if (noteRow['owner_id'] != uid) {
+      throw Exception('No eres dueño de esa nota (no se puede compartir).');
+    }
+
+    // 3) Insert share
     await _sb.from('note_shares').upsert({
       'note_id': noteId,
       'shared_with': targetId,
