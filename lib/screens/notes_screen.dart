@@ -20,12 +20,17 @@ class NotesScreen extends StatefulWidget {
   State<NotesScreen> createState() => _NotesScreenState();
 }
 
-class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStateMixin {
+class _NotesScreenState extends State<NotesScreen>
+    with SingleTickerProviderStateMixin {
   final _repo = NotesRepo();
   final _cloud = CloudSyncService();
 
   List<Note> _notes = [];
   List<Note> _shared = [];
+
+  // Permisos por nota compartida (id -> canEdit)
+  final Map<String, bool> _sharedCanEdit = {};
+
   String _query = '';
 
   bool _isOnline = false;
@@ -36,7 +41,7 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
 
   late final TabController _tabs = TabController(length: 2, vsync: this);
 
- @override
+  @override
   void initState() {
     super.initState();
 
@@ -59,6 +64,13 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
   Future<void> _load() async {
     final notes = await _repo.getAll();
     final shared = await _repo.getShared();
+
+    // Si cargamos desde Hive, no tenemos permisos; por defecto solo lectura
+    _sharedCanEdit.clear();
+    for (final n in shared) {
+      _sharedCanEdit[n.id] = false;
+    }
+
     if (!mounted) return;
     setState(() {
       _notes = notes;
@@ -66,150 +78,7 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     });
   }
 
-  Future<void> _openSharePicker() async {
-  // Solo permitir desde "Mis notas"
-  _tabs.animateTo(0);
-
-  final tokenController = TextEditingController();
-  final selected = <String>{};
-
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (ctx) {
-      return StatefulBuilder(
-        builder: (ctx, setLocal) {
-          return AlertDialog(
-            title: const Text('Compartir notas por token'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: tokenController,
-                    decoration: const InputDecoration(
-                      labelText: 'Token del usuario',
-                      hintText: 'Pega el token (UUID)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Selecciona tus notas:',
-                      style: TextStyle(color: Colors.grey.shade800),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Flexible(
-                    child: _notes.isEmpty
-                        ? const Text('No tienes notas para compartir.')
-                        : ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: _notes.length,
-                            itemBuilder: (_, i) {
-                              final n = _notes[i];
-                              final checked = selected.contains(n.id);
-                              return CheckboxListTile(
-                                value: checked,
-                                dense: true,
-                                title: Text(
-                                  n.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                subtitle: Text(
-                                  n.content.isEmpty ? '(Sin contenido)' : n.content,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                onChanged: (v) {
-                                  setLocal(() {
-                                    if (v == true) {
-                                      selected.add(n.id);
-                                    } else {
-                                      selected.remove(n.id);
-                                    }
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Compartir'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-
-  if (ok != true) return;
-
-  final token = tokenController.text.trim();
-  if (token.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Pega un token válido.')),
-    );
-    return;
-  }
-  if (selected.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Selecciona al menos una nota.')),
-    );
-    return;
-  }
-
-  try {
-    setState(() => _isSyncing = true);
-
-    // 🔥 1) FORZAR SYNC ANTES DE COMPARTIR
-    await _syncNow(showSnackbars: false);
-
-    // 🔥 2) Asegurar sesión y profile
-    await _cloud.signInAnonymousIfNeeded();
-    final user = await _getNameAndToken();
-    await _cloud.ensureProfile(
-      name: user['name']!.isEmpty ? 'Usuario' : user['name']!,
-      token: user['token']!.isEmpty ? 'NO_TOKEN' : user['token']!,
-    );
-
-    // 🔥 3) Compartir notas seleccionadas
-    for (final noteId in selected) {
-      await _cloud.shareNoteByToken(
-        noteId: noteId,
-        token: token,
-      );
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Compartidas ${selected.length} nota(s) ✅')),
-    );
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No se pudo compartir: $e')),
-    );
-  } finally {
-    if (mounted) setState(() => _isSyncing = false);
-  }
-}
-
   void _listenConnectivity() async {
-    // estado inicial
     final initial = await Connectivity().checkConnectivity();
     if (!mounted) return;
     setState(() => _isOnline = initial != ConnectivityResult.none);
@@ -235,7 +104,8 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     if (_query.trim().isEmpty) return list;
     final q = _query.toLowerCase();
     return list.where((n) {
-      return n.title.toLowerCase().contains(q) || n.content.toLowerCase().contains(q);
+      return n.title.toLowerCase().contains(q) ||
+          n.content.toLowerCase().contains(q);
     }).toList();
   }
 
@@ -249,11 +119,11 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
   Future<void> _syncNow({required bool showSnackbars}) async {
     if (_isSyncing) return;
 
-    // Regla offline-first: si no hay internet, no truena nada
+    // Offline-first: si no hay internet, no truena nada
     if (!_isOnline) {
       if (showSnackbars && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sin internet: trabajando en modo offline.')),
+          const SnackBar(content: Text('Sin internet: modo offline.')),
         );
       }
       return;
@@ -265,7 +135,6 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
       await _cloud.signInAnonymousIfNeeded();
 
       final user = await _getNameAndToken();
-      // Asegura profile para que sharing por token funcione
       await _cloud.ensureProfile(
         name: user['name']!.isEmpty ? 'Usuario' : user['name']!,
         token: user['token']!.isEmpty ? 'NO_TOKEN' : user['token']!,
@@ -280,7 +149,6 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
           // si falla uno, no rompemos todo; seguirá en la cola
         }
       }
-      // si no explotó, limpias cola (en la práctica, lo ideal sería limpiar solo los borrados ok)
       await _repo.clearDeletedIds();
 
       // 2) Push local
@@ -289,14 +157,19 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
         await _cloud.pushLocalNote(n);
       }
 
-      // 3) Pull my notes + merge (last-write-wins por updatedAt)
+      // 3) Pull my notes + merge (last-write-wins)
       final cloudMine = await _cloud.pullMyNotes();
       final merged = _mergeLastWriteWins(local, cloudMine);
       await _repo.saveAll(merged);
 
-      // 4) Pull shared
-      final cloudShared = await _cloud.pullSharedNotes();
-      await _repo.saveShared(cloudShared);
+      // 4) Pull shared (con permisos)
+      final sharedItems = await _cloud.pullSharedNotesWithPerms();
+      final sharedNotes = sharedItems.map((e) => e.note).toList();
+      await _repo.saveShared(sharedNotes);
+
+      _sharedCanEdit
+        ..clear()
+        ..addEntries(sharedItems.map((e) => MapEntry(e.note.id, e.canEdit)));
 
       await _load();
 
@@ -327,7 +200,6 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
       if (existing == null) {
         map[n.id] = n;
       } else {
-        // el más nuevo gana
         map[n.id] = (n.updatedAt.isAfter(existing.updatedAt)) ? n : existing;
       }
     }
@@ -359,16 +231,17 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     if (ok == true) {
       await _repo.delete(note.id, trackRemote: true);
       await _load();
-      _scheduleAutoSync(); // auto sync silenciosa
+      _scheduleAutoSync();
     }
   }
 
   Future<void> _hideShared(Note note) async {
-    // solo lo ocultamos localmente (no podemos borrar en nube)
     await _repo.hideSharedLocally(note.id);
     await _load();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Nota compartida ocultada (solo en tu dispositivo).')),
+      const SnackBar(
+        content: Text('Nota compartida ocultada (solo en tu dispositivo).'),
+      ),
     );
   }
 
@@ -394,13 +267,180 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     }
   }
 
-  void _openView(Note note, {required bool isShared}) {
-    Navigator.push(
+  Future<void> _openView(
+    Note note, {
+    required bool isShared,
+    required bool canEdit,
+  }) async {
+    final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => NoteViewScreen(note: note, isShared: isShared),
+        builder: (_) =>
+            NoteViewScreen(note: note, isShared: isShared, canEdit: canEdit),
       ),
     );
+
+    // Si editaron desde el detalle (especialmente compartidas), refresca + sync
+    if (changed == true) {
+      await _load();
+      _scheduleAutoSync();
+    }
+  }
+
+  Future<void> _openSharePicker() async {
+    // Solo permitir desde "Mis notas"
+    _tabs.animateTo(0);
+
+    final tokenController = TextEditingController();
+    final selected = <String>{};
+    bool allowEdit = false;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              title: const Text('Compartir notas por token'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: tokenController,
+                      decoration: const InputDecoration(
+                        labelText: 'Token del usuario',
+                        hintText: 'Pega el token (UUID)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Permitir edición'),
+                      subtitle: const Text('Si está apagado: solo lectura'),
+                      value: allowEdit,
+                      onChanged: (v) => setLocal(() => allowEdit = v),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Selecciona tus notas:',
+                        style: TextStyle(color: Colors.grey.shade800),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Flexible(
+                      child: _notes.isEmpty
+                          ? const Text('No tienes notas para compartir.')
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: _notes.length,
+                              itemBuilder: (_, i) {
+                                final n = _notes[i];
+                                final checked = selected.contains(n.id);
+                                return CheckboxListTile(
+                                  value: checked,
+                                  dense: true,
+                                  title: Text(
+                                    n.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    n.content.isEmpty
+                                        ? '(Sin contenido)'
+                                        : n.content,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  onChanged: (v) {
+                                    setLocal(() {
+                                      if (v == true) {
+                                        selected.add(n.id);
+                                      } else {
+                                        selected.remove(n.id);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Compartir'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok != true) return;
+
+    final token = tokenController.text.trim();
+    if (token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pega un token válido.')),
+      );
+      return;
+    }
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selecciona al menos una nota.')),
+      );
+      return;
+    }
+
+    try {
+      setState(() => _isSyncing = true);
+
+      // Forzar sync silenciosa antes de compartir (para asegurar que la nota exista en nube)
+      await _syncNow(showSnackbars: false);
+
+      await _cloud.signInAnonymousIfNeeded();
+      final user = await _getNameAndToken();
+      await _cloud.ensureProfile(
+        name: user['name']!.isEmpty ? 'Usuario' : user['name']!,
+        token: user['token']!.isEmpty ? 'NO_TOKEN' : user['token']!,
+      );
+
+      for (final noteId in selected) {
+        await _cloud.shareNoteByToken(
+          noteId: noteId,
+          token: token,
+          canEdit: allowEdit,
+        );
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Compartidas ${selected.length} nota(s) ✅ (${allowEdit ? "con edición" : "solo lectura"})',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo compartir: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
   }
 
   @override
@@ -426,17 +466,18 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                   size: 20,
                 ),
                 const SizedBox(width: 6),
-                Text(_isOnline ? 'Online' : 'Offline', style: const TextStyle(fontSize: 12)),
+                Text(
+                  _isOnline ? 'Online' : 'Offline',
+                  style: const TextStyle(fontSize: 12),
+                ),
               ],
             ),
           ),
-
           IconButton(
             tooltip: 'Compartir por token',
-            onPressed: () => _openSharePicker(),
+            onPressed: _isSyncing ? null : _openSharePicker,
             icon: const Icon(Icons.group_add),
           ),
-
           IconButton(
             tooltip: 'Sincronizar',
             onPressed: _isSyncing ? null : () => _syncNow(showSnackbars: true),
@@ -448,12 +489,12 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                   )
                 : const Icon(Icons.sync),
           ),
-
-          
         ],
         bottom: TabBar(
           controller: _tabs,
-          onTap: (_) => setState(() {}),
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
           tabs: const [
             Tab(text: 'Mis notas'),
             Tab(text: 'Compartidas'),
@@ -461,21 +502,22 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
         ),
       ),
       floatingActionButton: _tabs.index == 0
-    ? FloatingActionButton(
-        onPressed: _openCreate,
-        child: const Icon(Icons.add),
-      )
-    : FloatingActionButton.extended(
-        onPressed: _isSyncing ? null : () => _syncNow(showSnackbars: true),
-        icon: _isSyncing
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.sync),
-        label: const Text('Sync'),
-      ),
+          ? FloatingActionButton(
+              onPressed: _openCreate,
+              child: const Icon(Icons.add),
+            )
+          : FloatingActionButton.extended(
+              onPressed:
+                  _isSyncing ? null : () => _syncNow(showSnackbars: true),
+              icon: _isSyncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.sync),
+              label: const Text('Sync'),
+            ),
       body: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -498,7 +540,8 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                       ? const Center(child: Text('No hay notas aún.'))
                       : ListView.separated(
                           itemCount: mine.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (_, i) {
                             final note = mine[i];
                             return Dismissible(
@@ -506,7 +549,7 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                               direction: DismissDirection.endToStart,
                               confirmDismiss: (_) async {
                                 await _confirmDeleteMine(note);
-                                return false; // no auto borra visualmente
+                                return false;
                               },
                               background: Container(
                                 alignment: Alignment.centerRight,
@@ -515,11 +558,17 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                                   color: Colors.red.shade400,
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: const Icon(Icons.delete, color: Colors.white),
+                                child:
+                                    const Icon(Icons.delete, color: Colors.white),
                               ),
                               child: NoteCard(
                                 note: note,
-                                onTap: () => _openView(note, isShared: false),
+                                isShared: false,
+                                onTap: () => _openView(
+                                  note,
+                                  isShared: false,
+                                  canEdit: true,
+                                ),
                                 onEdit: () => _openEdit(note),
                               ),
                             );
@@ -531,9 +580,12 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                       ? const Center(child: Text('No hay notas compartidas.'))
                       : ListView.separated(
                           itemCount: shared.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (_, i) {
                             final note = shared[i];
+                            final canEdit = _sharedCanEdit[note.id] ?? false;
+
                             return Dismissible(
                               key: ValueKey('shared-${note.id}'),
                               direction: DismissDirection.endToStart,
@@ -548,16 +600,29 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                                   color: Colors.orange.shade400,
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: const Icon(Icons.visibility_off, color: Colors.white),
+                                child: const Icon(Icons.visibility_off,
+                                    color: Colors.white),
                               ),
                               child: NoteCard(
                                 note: note,
                                 isShared: true,
-                                onTap: () => _openView(note, isShared: true),
+                                onTap: () => _openView(
+                                  note,
+                                  isShared: true,
+                                  canEdit: canEdit,
+                                ),
                                 onEdit: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('No puedes editar notas compartidas.')),
-                                  );
+                                  if (canEdit) {
+                                    _openEdit(note);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Esta nota es compartida solo lectura.',
+                                        ),
+                                      ),
+                                    );
+                                  }
                                 },
                               ),
                             );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+
 import '../data/notes_repo.dart';
 import '../models/note.dart';
 import '../utils/constants.dart';
@@ -44,7 +45,6 @@ class _NoteFormScreenState extends State<NoteFormScreen> {
     final title = _title.text.trim();
     final content = _content.text.trim();
 
-    // Validación como tu requisito: título obligatorio
     if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('El título es obligatorio.')),
@@ -72,7 +72,7 @@ class _NoteFormScreenState extends State<NoteFormScreen> {
 
     await _repo.upsert(note);
     if (!mounted) return;
-    Navigator.pop(context, true); // true => "hubo cambios"
+    Navigator.pop(context, true);
   }
 
   @override
@@ -82,7 +82,7 @@ class _NoteFormScreenState extends State<NoteFormScreen> {
         title: Text(_isEditing ? 'Editar Nota' : 'Nueva Nota'),
       ),
       body: Container(
-        color: Color(_colorValue).withOpacity(0.35), // fondo suave por color
+        color: Color(_colorValue).withOpacity(0.35),
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -109,10 +109,13 @@ class _NoteFormScreenState extends State<NoteFormScreen> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 10),
-            ColorPicker(
+
+            // ✅ 7 colores + paleta libre
+            NoteColorPicker(
               selected: _colorValue,
               onSelected: (v) => setState(() => _colorValue = v),
             ),
+
             const SizedBox(height: 20),
             Row(
               children: [
