@@ -104,7 +104,11 @@ class _NoteViewScreenState extends State<NoteViewScreen> {
       if (!online) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sin internet: no se puede editar una nota compartida.')),
+          const SnackBar(
+            content: Text(
+              'Sin internet: no se puede editar una nota compartida.',
+            ),
+          ),
         );
         return;
       }
@@ -128,17 +132,17 @@ class _NoteViewScreenState extends State<NoteViewScreen> {
       });
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Actualizada ✅')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Actualizada ✅')));
 
       // Regresa "true" para que NotesScreen refresque y sincronice
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo editar: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo editar: $e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -158,10 +162,7 @@ class _NoteViewScreenState extends State<NoteViewScreen> {
               child: Center(
                 child: Row(
                   children: [
-                    Icon(
-                      widget.canEdit ? Icons.edit : Icons.lock,
-                      size: 18,
-                    ),
+                    Icon(widget.canEdit ? Icons.edit : Icons.lock, size: 18),
                     const SizedBox(width: 6),
                     Text(
                       widget.canEdit ? 'Editable' : 'Solo lectura',
@@ -193,7 +194,10 @@ class _NoteViewScreenState extends State<NoteViewScreen> {
             children: [
               Text(
                 note.title,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Text(

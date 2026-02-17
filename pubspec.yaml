@@ -1,6 +1,6 @@
 name: app_notas
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 
 version: 1.0.0+1
 
@@ -13,6 +13,12 @@ dependencies:
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.5.6
   connectivity_plus: ^6.0.3
+
+  firebase_core: ^3.0.0
+  cloud_firestore: ^5.0.0
+  firebase_auth: ^5.0.0
+
+  http: ^1.2.2
 
   # Persistencia + utilidades
   hive: ^2.2.3
