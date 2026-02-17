@@ -41,7 +41,7 @@ class CloudSyncService {
       'title': note.title,
       'content': note.content,
       'color_value': note.colorValue,
-      'updated_at': note.updatedAt.toUtc().toIso8601String(),
+      //'updated_at': note.updatedAt.toUtc().toIso8601String(),
     });
   }
 

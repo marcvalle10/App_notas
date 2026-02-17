@@ -65,10 +65,16 @@ class _NotesScreenState extends State<NotesScreen>
     final notes = await _repo.getAll();
     final shared = await _repo.getShared();
 
-    // Si cargamos desde Hive, no tenemos permisos; por defecto solo lectura
-    _sharedCanEdit.clear();
+    // NO borres permisos aquí.
+    // Solo pon default false si aún no existe el permiso en memoria.
+    final sharedIds = shared.map((n) => n.id).toSet();
+
+    // Limpia permisos de notas que ya no existen en la lista compartida
+    _sharedCanEdit.removeWhere((id, _) => !sharedIds.contains(id));
+
+    // Asegura default (solo lectura) si no hay permiso cargado todavía
     for (final n in shared) {
-      _sharedCanEdit[n.id] = false;
+      _sharedCanEdit.putIfAbsent(n.id, () => false);
     }
 
     if (!mounted) return;
@@ -151,18 +157,30 @@ class _NotesScreenState extends State<NotesScreen>
       }
       await _repo.clearDeletedIds();
 
-      // 2) Push local
+      // 2) Pull primero para comparar
+      final cloudMineBefore = await _cloud.pullMyNotes();
+      final cloudMap = {for (final n in cloudMineBefore) n.id: n};
+
+      // 3) Push SOLO si mi local es más nuevo o no existe en nube
       final local = await _repo.getAll();
+
       for (final n in local) {
-        await _cloud.pushLocalNote(n);
+        final remote = cloudMap[n.id];
+
+        final shouldPush =
+            remote == null || n.updatedAt.isAfter(remote.updatedAt);
+
+        if (shouldPush) {
+          await _cloud.pushLocalNote(n);
+        }
       }
 
-      // 3) Pull my notes + merge (last-write-wins)
-      final cloudMine = await _cloud.pullMyNotes();
-      final merged = _mergeLastWriteWins(local, cloudMine);
+      // 4) Pull otra vez y merge final (last-write-wins)
+      final cloudMineAfter = await _cloud.pullMyNotes();
+      final merged = _mergeLastWriteWins(local, cloudMineAfter);
       await _repo.saveAll(merged);
 
-      // 4) Pull shared (con permisos)
+      // 5) Pull shared (con permisos)
       final sharedItems = await _cloud.pullSharedNotesWithPerms();
       final sharedNotes = sharedItems.map((e) => e.note).toList();
       await _repo.saveShared(sharedNotes);
@@ -180,9 +198,9 @@ class _NotesScreenState extends State<NotesScreen>
       }
     } catch (e) {
       if (showSnackbars && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sync falló: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sync falló: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSyncing = false);
@@ -392,9 +410,9 @@ class _NotesScreenState extends State<NotesScreen>
 
     final token = tokenController.text.trim();
     if (token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pega un token válido.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Pega un token válido.')));
       return;
     }
     if (selected.isEmpty) {
@@ -435,9 +453,9 @@ class _NotesScreenState extends State<NotesScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo compartir: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo compartir: $e')));
     } finally {
       if (mounted) setState(() => _isSyncing = false);
     }
@@ -461,10 +479,7 @@ class _NotesScreenState extends State<NotesScreen>
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                Icon(
-                  _isOnline ? Icons.wifi : Icons.wifi_off,
-                  size: 20,
-                ),
+                Icon(_isOnline ? Icons.wifi : Icons.wifi_off, size: 20),
                 const SizedBox(width: 6),
                 Text(
                   _isOnline ? 'Online' : 'Offline',
@@ -507,8 +522,9 @@ class _NotesScreenState extends State<NotesScreen>
               child: const Icon(Icons.add),
             )
           : FloatingActionButton.extended(
-              onPressed:
-                  _isSyncing ? null : () => _syncNow(showSnackbars: true),
+              onPressed: _isSyncing
+                  ? null
+                  : () => _syncNow(showSnackbars: true),
               icon: _isSyncing
                   ? const SizedBox(
                       width: 18,
@@ -558,8 +574,10 @@ class _NotesScreenState extends State<NotesScreen>
                                   color: Colors.red.shade400,
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child:
-                                    const Icon(Icons.delete, color: Colors.white),
+                                child: const Icon(
+                                  Icons.delete,
+                                  color: Colors.white,
+                                ),
                               ),
                               child: NoteCard(
                                 note: note,
@@ -600,8 +618,10 @@ class _NotesScreenState extends State<NotesScreen>
                                   color: Colors.orange.shade400,
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: const Icon(Icons.visibility_off,
-                                    color: Colors.white),
+                                child: const Icon(
+                                  Icons.visibility_off,
+                                  color: Colors.white,
+                                ),
                               ),
                               child: NoteCard(
                                 note: note,

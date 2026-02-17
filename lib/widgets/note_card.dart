@@ -50,14 +50,20 @@ class NoteCard extends StatelessWidget {
                         if (isShared) ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.black.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: const Text(
                               'Compartida',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -73,7 +79,10 @@ class NoteCard extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(
                       'Actualizada: ${formatDate(note.updatedAt)}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade800,
+                      ),
                     ),
                   ],
                 ),
